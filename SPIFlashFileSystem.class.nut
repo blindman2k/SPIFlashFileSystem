@@ -77,8 +77,8 @@ class SPIFlashFileSystem {
         _disable();
 
         // Set the start / end
-        _start = start ? _start : 0;
-        _end = end ? _end : _size;
+        _start = start ? start : 0;
+        _end = end ? end : _size;
 
         // Validate the start / end
         if (_start % SPIFLASHFILESYSTEM_BLOCK_SIZE != 0 || _start >= _size) throw "Invalid Boundary (start)"
@@ -679,48 +679,50 @@ class SPIFlashFileSystem {
     //--------------------------------------------------------------------------
     function _readLookupPage(block, withRaw = false) {
 
-
         // Read the first two page (the lookup table)
         _enable();
-        local lookupData = _flash.read(block, 2 * SPIFLASHFILESYSTEM_PAGE_SIZE);
+        local lookupData = _flash.read(block, 2 * SPIFLASHFILESYSTEM_PAGE_SIZE).tostring();
         _disable();
 
-        // Skip past the first 2x16 bytes, which are the lookup pages (the whole first sector)
+        // Calculate the page we're on
         local page = block + SPIFLASHFILESYSTEM_SECTOR_SIZE;
-        lookupData.seek(2 * SPIFLASHFILESYSTEM_PAGES_PER_SECTOR);
 
-        // Store this in a table of arrays instead of an array of tables.
-        // An array of tables eats up all available memory.
-        local lookupPages = { count = 0, id = [], stat = [], page = [], addr = [], raw = [] };
-        while (!lookupData.eos()) {
+        // Store this data as local variables until we're ready to return to
+        // save time indexing into a table
+        local count = 0, ids = [], stats = [], pages = [], addrs = [], raws = [];
 
-            // Read the next page
-            local addr = block + lookupData.tell();
-            local objData = lookupData.readn('w');
+        // Skip past the first 2x16 bytes, which are the lookup pages (the whole first sector)
+        local start = 2 * SPIFLASHFILESYSTEM_PAGES_PER_SECTOR;
+        local end = (2 * SPIFLASHFILESYSTEM_PAGE_SIZE);
 
-            lookupPages.count++;
-            lookupPages.page.push(page);
-            lookupPages.addr.push(addr);
-            lookupPages.id.push(objData & SPIFLASHFILESYSTEM_LOOKUP_MASK_ID);
-            if (withRaw) lookupPages.raw.push(objData);
+        for(local i = start; i < end; i+= 2) {
+            // Grab the current data
+            local objData = (lookupData[i] << 8) + lookupData[i+1];
+
+            count++;
+            pages.push(page);
+            addrs.push(block+i);
+
+            ids.push(objData & SPIFLASHFILESYSTEM_LOOKUP_MASK_ID);
+            if (withRaw) raws.push(objData);
 
             if (objData == SPIFLASHFILESYSTEM_LOOKUP_FREE) {
-                lookupPages.stat.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_FREE);
+                stats.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_FREE);
             } else if (objData == SPIFLASHFILESYSTEM_LOOKUP_ERASED) {
-                lookupPages.stat.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_ERASED);
+                stats.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_ERASED);
             } else if ((objData & SPIFLASHFILESYSTEM_LOOKUP_MASK_INDEX) == SPIFLASHFILESYSTEM_LOOKUP_MASK_INDEX) {
-                lookupPages.stat.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_INDEX);
+                stats.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_INDEX);
             } else {
-                lookupPages.stat.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_DATA);
+                stats.push(SPIFLASHFILESYSTEM_LOOKUP_STAT_DATA);
             }
 
             // Move forward
             page += SPIFLASHFILESYSTEM_PAGE_SIZE;
         }
-
-        return lookupPages;
-
+        // Build table to return
+        return { "count": count, "id": ids, "stat": stats, "page": pages, "addr": addrs, "raw": raws };
     }
+
 
 
     //--------------------------------------------------------------------------
