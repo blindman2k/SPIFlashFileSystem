@@ -739,42 +739,67 @@ class SPIFlashFileSystem {
 
     //--------------------------------------------------------------------------
     function _readIndexPage(indexPage, withRaw = false) {
-
         _enable();
 
         // Read the index page and parse the header
         local indexData = _flash.read(indexPage, SPIFLASHFILESYSTEM_PAGE_SIZE);
-        // server.log("indexData at " + indexPage + " is: " + Utils.logBin(indexData.tostring().slice(0, 12)));
+        local str = indexData.tostring();
+        local i = 0;
 
         local index = {};
-        index.flags <- indexData.readn('b');
-        index.id <- indexData.readn('w'); // This should match the previous id
-        index.span <- indexData.readn('w');
+
+        // index.flags <- indexData.readn('b');
+        index.flags <- str[i++];
+
+        // index.id <- indexData.readn('w');       // This should match the previous id
+        index.id <- (str[i+1]<<8) + str[i];
+        i+=2;
+
+        // index.span <- indexData.readn('w');
+        index.span <- (str[i+1]<<8) + str[i];
+        i+=2;
+
         if (index.span == 0) {
-            index.size <- indexData.readn('i');
-            local fnameLen = indexData.readn('b');
-            index.fname <- indexData.readstring(fnameLen);
+            // index.size <- indexData.readn('i');
+            index.size <- (str[i+3]<<24) + (str[i+2]<<16) + (str[i+1]<<8) + str[i]
+            i+=4;
+
+            // local fnameLen = indexData.readn('b');
+            local fnameLen = str[i++];
+
+            // index.fname <- indexData.readstring(fnameLen);
+            index.fname <- str.slice(i, i+fnameLen);
+            i += fnameLen
         }
-        index.header <- indexData.tell();
+        // index.header <- indexData.tell();
+        index.header <- i;
+
         if (withRaw) index.raw <- indexData;
 
         // Read the page numbers if there are any left
         // NOTE: This is a very slow operation and would be much faster if it was left as a blob.
         //       But this takes lots of hard changes elsewhere.
         index.dataPages <- [];
-        while (indexData.len() - indexData.tell() >= 2) {
-            local dataIdx = indexData.readn('w');
+
+        // Current position
+        local leftToRead = SPIFLASHFILESYSTEM_PAGE_SIZE - index.header;
+
+        while (leftToRead >= 2) {
+            // local dataIdx = indexData.readn('w');
+            local dataIdx = (str[i+1]<<8)+str[i];
+            i+=2;
+
+            leftToRead -= 2;
+
             if (dataIdx != SPIFLASHFILESYSTEM_LOOKUP_ERASED && dataIdx != SPIFLASHFILESYSTEM_LOOKUP_FREE) {
                 index.dataPages.push(dataIdx * SPIFLASHFILESYSTEM_PAGE_SIZE);
                 // server.log(format("* Found dataPage %02x on index %02x for id %d", (dataPageOffset * SPIFLASHFILESYSTEM_PAGE_SIZE), indexPage, index.id))
             }
         }
-
         _disable();
 
         return index;
     }
-
 
     //--------------------------------------------------------------------------
     function _readPageHeader(page) {
