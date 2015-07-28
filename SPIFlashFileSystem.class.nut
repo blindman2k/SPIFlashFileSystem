@@ -214,7 +214,7 @@ class SPIFlashFileSystem {
         // Format all the sectors
         _enable()
         for (local i = 0; i < _sectors; i++) {
-            _flash.erasesector(i * SPIFLASHFILESYSTEM_SECTOR_SIZE);
+            _flash.erasesector(_start + i * SPIFLASHFILESYSTEM_SECTOR_SIZE);
         }
         _disable()
         imp.sleep(0.05);
